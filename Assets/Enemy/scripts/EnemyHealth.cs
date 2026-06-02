@@ -44,5 +44,7 @@ public class EnemyHealth : MonoBehaviour
         {
             GetComponent<UnityEngine.AI.NavMeshAgent>().enabled = false;
         }
+
+        Destroy(gameObject, 3.0f);
     }
 }
