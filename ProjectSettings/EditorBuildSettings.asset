@@ -6,9 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
+    path: Assets/OutdoorsScene.unity
+    guid: 8124e5870f4fd4c779e7a5f994e84ad1
   m_configObjects:
-    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 6c20cb28c1ad3fb43b91f1aef6242ccd, type: 3}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 76c8c95f9f91c3c46b4411385f67f768, type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 7f97ee188a78ec04e942fb5a60a634bd, type: 2}
