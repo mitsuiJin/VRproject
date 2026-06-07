@@ -449,59 +449,6 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
---- !u!1 &657001241
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 657001243}
-  - component: {fileID: 657001242}
-  m_Layer: 0
-  m_Name: ZombiePortal
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &657001242
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 657001241}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d13d2c8da36a69e43b75a8c021220115, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ZombieSpawner
-  phases:
-  - phaseName: 1
-    zombiePrefabs:
-    - {fileID: 2958547037578414838, guid: db0d93868d7ddae4e9276c5495645b4f, type: 3}
-    - {fileID: 5563151238416578159, guid: 96921c75bdf620a43ae517baea4aa424, type: 3}
-    zombieCount: 5
-    spawnInterval: 3
-  timeBetweenPhases: 5
-  spawnRadius: 3
---- !u!4 &657001243
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 657001241}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -14.15707, y: -0.02, z: 11.16986}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1567971010
 GameObject:
   m_ObjectHideFlags: 0
@@ -881,11 +828,68 @@ MonoBehaviour:
   m_MinRegionArea: 2
   m_NavMeshData: {fileID: 23800000, guid: 217489929d31a0c4f825ff8000d7cafc, type: 2}
   m_BuildHeightMesh: 0
+--- !u!1001 &8325799157695834876
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -14.15707
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.02
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 11.16986
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4272239739125360119, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7267749831007411597, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
+      propertyPath: m_Name
+      value: ZombiePortal
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 60212908732a2f2468ebf3d2d334af88, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 189424816}
   - {fileID: 1841043749}
-  - {fileID: 657001243}
+  - {fileID: 8325799157695834876}
   - {fileID: 1567971012}
