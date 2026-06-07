@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4239277815306136001}
   - component: {fileID: 9001234567890123456}
   - component: {fileID: 4261698198963557928}
+  - component: {fileID: 6163170376824529140}
   m_Layer: 0
   m_Name: BulletLite_01
   m_TagString: Untagged
@@ -81,3 +82,15 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.03402251, y: 0.010618918, z: 0.011096747}
   m_Center: {x: 0.007643539, y: 0.00022773724, z: 0.000045594294}
+--- !u!114 &6163170376824529140
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3575611928538805115}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cc477078b6304349b354f43ae60750d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
