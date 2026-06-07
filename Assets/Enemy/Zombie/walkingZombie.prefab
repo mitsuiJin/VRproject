@@ -1284,7 +1284,7 @@ GameObject:
   - component: {fileID: 3206518351147968705}
   m_Layer: 0
   m_Name: walkingZombie
-  m_TagString: Untagged
+  m_TagString: Enemy
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1298,7 +1298,7 @@ Transform:
   m_GameObject: {fileID: 2958547037578414838}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.4286892, y: 0.0000005550046, z: -8.21}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1364,10 +1364,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.5
-  m_Height: 1
+  m_Radius: 0.4
+  m_Height: 1.8
   m_Direction: 1
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Center: {x: 0, y: 1, z: 0}
 --- !u!195 &14983130910246499
 NavMeshAgent:
   m_ObjectHideFlags: 0
@@ -1402,7 +1402,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7be432394cd5f4f4ab122ad04724d2ce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
-  maxHealth: 100
+  health: 2
+  currentTension: 0
 --- !u!114 &3206518351147968705
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1416,6 +1417,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   attackCooldown: 2
+  moveParameterName: IsWalking
+  attackParameterName: Attack
 --- !u!1 &2961212939157484154
 GameObject:
   m_ObjectHideFlags: 0
