@@ -1,6 +1,13 @@
 fileFormatVersion: 2
+<<<<<<<< HEAD:Assets/Samples/XR Interaction Toolkit/3.4.1/Starter Assets/DemoAssets/Scripts.meta
 guid: 89c7da9a19d09c8419df6ac7f38d429e
 folderAsset: yes
+========
+guid: 731f1baa9d144a9897cb1d341c2092b8
+folderAsset: yes
+timeCreated: 1442040525
+licenseType: Store
+>>>>>>>> main:Assets/TextMesh Pro/Resources/Fonts & Materials.meta
 DefaultImporter:
   externalObjects: {}
   userData: 

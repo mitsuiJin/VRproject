@@ -1,5 +1,11 @@
 fileFormatVersion: 2
+<<<<<<<< HEAD:Assets/Samples/XR Interaction Toolkit/3.4.1/Starter Assets/DemoAssets/Scripts/IncrementUIText.cs.meta
 guid: ba6ff5e7c92519444bc2a7ca46558963
+========
+guid: 21256c5b62f346f18640dad779911e20
+timeCreated: 1430348781
+licenseType: Store
+>>>>>>>> main:Assets/TextMesh Pro/Examples & Extras/Scripts/TMP_TextInfoDebugTool.cs.meta
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2

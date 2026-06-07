@@ -1,9 +1,15 @@
 fileFormatVersion: 2
+<<<<<<<< HEAD:Assets/Samples/XR Hands.meta
+guid: c4536a069b8fae5498923f130e74c339
+folderAsset: yes
+========
 guid: 4aecb92fff08436c8303b10eab8da368
 folderAsset: yes
 timeCreated: 1441876950
-licenseType: Pro
+licenseType: Store
+>>>>>>>> main:Assets/TextMesh Pro/Resources/Style Sheets.meta
 DefaultImporter:
+  externalObjects: {}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
