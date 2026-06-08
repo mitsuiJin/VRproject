@@ -5,6 +5,15 @@ using System.Collections;
 public class EnemyHealth : MonoBehaviour
 {
     public int health = 2;
+    public float tensionInstantKillThreshold = 0.5f;
+    public float tensionKnockbackDistanceMultiplier = 3f;
+    public float minimumKnockbackDistance = 1.25f;
+    public float knockbackDuration = 0.45f;
+    public bool enableKnockbackHaptics = true;
+    [Range(0f, 1f)]
+    public float knockbackHapticAmplitude = 1f;
+    public float knockbackHapticDuration = 0.5f;
+
     private Animator animator;
     private NavMeshAgent agent;
     private EnemyMoovement movement;
@@ -13,7 +22,17 @@ public class EnemyHealth : MonoBehaviour
 
     private EnemySound enemySound;
 
+    void Awake()
+    {
+        CacheComponents();
+    }
+
     void Start()
+    {
+        CacheComponents();
+    }
+
+    private void CacheComponents()
     {
         animator = GetComponent<Animator>();
         agent = GetComponent<NavMeshAgent>();
@@ -23,6 +42,11 @@ public class EnemyHealth : MonoBehaviour
     }
 
     public void TakeDamage(int damage)
+    {
+        TakeDamage(damage, transform.position);
+    }
+
+    public void TakeDamage(int damage, Vector3 hitPoint)
     {
         if (isDead) return;
 
@@ -35,64 +59,68 @@ public class EnemyHealth : MonoBehaviour
             playerTension = PlayerStatus.Instance.currentTension;
         }
 
-        // 플레이어의 긴장 상태가 0.5 이상일 경우 범위 공격 및 즉사 처리
-        if (playerTension >= 0.5f)
+        // High tension attacks kill immediately and push the directly hit enemy away from the hit point.
+        if (playerTension >= tensionInstantKillThreshold)
         {
-            TensionAoEDeath(playerTension);
+            ApplyKnockbackAndDie(hitPoint, playerTension);
+            return;
+        }
+
+        health -= damage;
+        if (health > 0)
+        {
+            if (animator != null) animator.SetTrigger("Hit");
         }
         else
         {
-            health -= damage;
-            if (health > 0)
-            {
-                animator.SetTrigger("Hit");
-            }
-            else
-            {
-                Die();
-            }
+            Die();
         }
     }
 
-    private void TensionAoEDeath(float tensionLevel)
-    {
-        // 플레이어의 긴장도 수치에 비례하여 범위 반경 결정
-        float radius = tensionLevel * 8f;
-        Collider[] colliders = Physics.OverlapSphere(transform.position, radius);
-
-        foreach (Collider hit in colliders)
-        {
-            if (hit.CompareTag("Enemy"))
-            {
-                EnemyHealth neighborHealth = hit.GetComponent<EnemyHealth>();
-
-                if (neighborHealth != null && !neighborHealth.isDead)
-                {
-                    neighborHealth.ApplyKnockbackAndDie(transform.position, tensionLevel);
-                }
-            }
-        }
-    }
-
-    public void ApplyKnockbackAndDie(Vector3 explosionCenter, float tensionLevel)
+    public void ApplyKnockbackAndDie(Vector3 knockbackOrigin, float tensionLevel)
     {
         if (isDead) return;
+        CacheComponents();
+
         isDead = true;
 
         if (enemySound != null) enemySound.PlayDeathSound();
 
-        agent.enabled = false;
-        movement.enabled = false;
-        coll.enabled = false;
+        if (agent != null && agent.enabled) agent.enabled = false;
+        if (movement != null) movement.enabled = false;
+        if (coll != null) coll.enabled = false;
 
-        animator.SetTrigger("Die");
+        if (animator != null)
+        {
+            animator.applyRootMotion = false;
+            animator.SetTrigger("Die");
+        }
+
+        if (enableKnockbackHaptics)
+        {
+            RightControllerHaptics.Pulse(knockbackHapticAmplitude, knockbackHapticDuration);
+        }
 
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null) rb.isKinematic = true;
 
-        Vector3 pushDirection = (transform.position - explosionCenter).normalized;
+        Vector3 pushDirection = transform.position - knockbackOrigin;
         pushDirection.y = 0f;
-        float pushDistance = tensionLevel * 3f;
+
+        if (pushDirection.sqrMagnitude < 0.0001f)
+        {
+            pushDirection = -transform.forward;
+            pushDirection.y = 0f;
+        }
+
+        if (pushDirection.sqrMagnitude < 0.0001f)
+        {
+            pushDirection = Vector3.back;
+        }
+
+        pushDirection.Normalize();
+
+        float pushDistance = Mathf.Max(minimumKnockbackDistance, Mathf.Clamp01(tensionLevel) * tensionKnockbackDistanceMultiplier);
 
         StartCoroutine(SlideBackwards(pushDirection, pushDistance));
         Destroy(gameObject, 3f);
@@ -100,7 +128,7 @@ public class EnemyHealth : MonoBehaviour
 
     private IEnumerator SlideBackwards(Vector3 direction, float distance)
     {
-        float duration = 1.0f;
+        float duration = Mathf.Max(0.01f, knockbackDuration);
         float elapsedTime = 0f;
         Vector3 startPosition = transform.position;
         Vector3 targetPosition = startPosition + direction * distance;
@@ -121,15 +149,17 @@ public class EnemyHealth : MonoBehaviour
     private void Die()
     {
         if (isDead) return;
+        CacheComponents();
+
         isDead = true;
 
         if (enemySound != null) enemySound.PlayDeathSound();
 
-        agent.enabled = false;
-        movement.enabled = false;
-        coll.enabled = false;
+        if (agent != null && agent.enabled) agent.enabled = false;
+        if (movement != null) movement.enabled = false;
+        if (coll != null) coll.enabled = false;
 
-        animator.SetTrigger("Die");
+        if (animator != null) animator.SetTrigger("Die");
         Destroy(gameObject, 3f);
     }
 }

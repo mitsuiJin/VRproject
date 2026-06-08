@@ -30,7 +30,8 @@ public class Katana : MonoBehaviour
 
             if (enemy != null && !enemy.isDead)
             {
-                enemy.TakeDamage(damage);
+                Vector3 hitPoint = other.ClosestPoint(transform.position);
+                enemy.TakeDamage(damage, hitPoint);
                 isHitting = true;
 
                 // 좀비를 베는 효과음 재생

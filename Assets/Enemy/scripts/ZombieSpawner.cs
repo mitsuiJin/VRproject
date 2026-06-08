@@ -1,11 +1,12 @@
-using System.Collections;
+癤퓎sing System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI; // NavMesh 기능 사용을 위해 추가
+using UnityEngine.AI;
 
 [System.Serializable]
 public class Phase
 {
-    public string phaseName = "페이즈 이름";
+    public string phaseName = "Phase";
     public GameObject[] zombiePrefabs;
     public int zombieCount = 5;
     public float spawnInterval = 3f;
@@ -16,70 +17,162 @@ public class ZombieSpawner : MonoBehaviour
     public Phase[] phases;
     public float timeBetweenPhases = 5f;
 
-    // 스폰 반경 설정 (이 반경 안에서 랜덤하게 소환됩니다)
-    [Header("스폰 설정")]
+    [Header("Population")]
+    public int targetActiveZombies = 6;
+    public float respawnDelay = 0.5f;
+    public float populationCheckInterval = 0.25f;
+
+    [Header("Spawn Area")]
     public float spawnRadius = 3f;
 
-    private int currentPhaseIndex = 0;
+    private readonly List<EnemyHealth> activeZombies = new List<EnemyHealth>();
 
-    void Start()
+    private void Start()
     {
-        StartCoroutine(StartNextPhase());
+        FillPopulation();
+        StartCoroutine(MaintainPopulation());
     }
 
-    IEnumerator StartNextPhase()
+    private IEnumerator MaintainPopulation()
     {
-        if (currentPhaseIndex < phases.Length)
+        WaitForSeconds checkWait = new WaitForSeconds(Mathf.Max(0.05f, populationCheckInterval));
+
+        while (true)
         {
-            Phase currentPhase = phases[currentPhaseIndex];
-            UnityEngine.Debug.Log($"<color=red>--- {currentPhase.phaseName} 시작! ---</color>");
+            RemoveDeadOrMissingZombies();
 
-            for (int i = 0; i < currentPhase.zombieCount; i++)
+            if (activeZombies.Count < targetActiveZombies)
             {
-                int randomIndex = UnityEngine.Random.Range(0, currentPhase.zombiePrefabs.Length);
-                GameObject zombieToSpawn = currentPhase.zombiePrefabs[randomIndex];
+                float delay = Mathf.Max(0f, respawnDelay);
+                if (delay > 0f)
+                {
+                    yield return new WaitForSeconds(delay);
+                }
 
-                // 랜덤 오프셋 계산 및 안전한 위치 탐색
-                Vector3 spawnPosition = GetSafeSpawnPosition();
-
-                Instantiate(zombieToSpawn, spawnPosition, transform.rotation);
-
-                yield return new WaitForSeconds(currentPhase.spawnInterval);
+                FillPopulation();
             }
 
-            UnityEngine.Debug.Log($"{currentPhase.phaseName} 좀비 출현 완료. 다음 페이즈 대기 중...");
-            yield return new WaitForSeconds(timeBetweenPhases);
-
-            currentPhaseIndex++;
-            StartCoroutine(StartNextPhase());
-        }
-        else
-        {
-            UnityEngine.Debug.Log("<color=blue>모든 페이즈 종료! 방어 성공!</color>");
+            yield return checkWait;
         }
     }
 
-    // 반경 내에서 안전한 NavMesh 위치를 찾는 함수
-    Vector3 GetSafeSpawnPosition()
+    private void FillPopulation()
     {
-        // 1. 반경 내의 랜덤한 원형 좌표(X, Z)를 구합니다.
-        Vector2 randomCircle = UnityEngine.Random.insideUnitCircle * spawnRadius;
-        Vector3 randomPos = transform.position + new Vector3(randomCircle.x, 0, randomCircle.y);
+        RemoveDeadOrMissingZombies();
 
-        // 2. 그 랜덤 위치에서 가장 가까운 NavMesh(걸을 수 있는 바닥)를 찾습니다.
-        NavMeshHit hit;
-        // 반경(spawnRadius) 내에서 유효한 바닥을 찾으면 그 위치를 반환
-        if (NavMesh.SamplePosition(randomPos, out hit, spawnRadius, NavMesh.AllAreas))
+        while (activeZombies.Count < targetActiveZombies)
+        {
+            if (!SpawnZombie())
+            {
+                break;
+            }
+        }
+    }
+
+    private bool SpawnZombie()
+    {
+        GameObject zombiePrefab = GetRandomZombiePrefab();
+        if (zombiePrefab == null)
+        {
+            Debug.LogWarning("[ZombieSpawner] No zombie prefab is assigned.");
+            return false;
+        }
+
+        GameObject zombieObject = Instantiate(zombiePrefab, GetSafeSpawnPosition(), transform.rotation);
+        EnemyHealth enemyHealth = zombieObject.GetComponentInChildren<EnemyHealth>();
+
+        if (enemyHealth == null)
+        {
+            Debug.LogWarning($"[ZombieSpawner] Spawned '{zombieObject.name}' without EnemyHealth.");
+            return false;
+        }
+
+        activeZombies.Add(enemyHealth);
+        return true;
+    }
+
+    private GameObject GetRandomZombiePrefab()
+    {
+        int validPrefabCount = 0;
+
+        if (phases != null)
+        {
+            foreach (Phase phase in phases)
+            {
+                if (phase == null || phase.zombiePrefabs == null)
+                {
+                    continue;
+                }
+
+                foreach (GameObject prefab in phase.zombiePrefabs)
+                {
+                    if (prefab != null)
+                    {
+                        validPrefabCount++;
+                    }
+                }
+            }
+        }
+
+        if (validPrefabCount == 0)
+        {
+            return null;
+        }
+
+        int selectedIndex = Random.Range(0, validPrefabCount);
+
+        foreach (Phase phase in phases)
+        {
+            if (phase == null || phase.zombiePrefabs == null)
+            {
+                continue;
+            }
+
+            foreach (GameObject prefab in phase.zombiePrefabs)
+            {
+                if (prefab == null)
+                {
+                    continue;
+                }
+
+                if (selectedIndex == 0)
+                {
+                    return prefab;
+                }
+
+                selectedIndex--;
+            }
+        }
+
+        return null;
+    }
+
+    private void RemoveDeadOrMissingZombies()
+    {
+        for (int i = activeZombies.Count - 1; i >= 0; i--)
+        {
+            EnemyHealth enemyHealth = activeZombies[i];
+            if (enemyHealth == null || enemyHealth.isDead)
+            {
+                activeZombies.RemoveAt(i);
+            }
+        }
+    }
+
+    private Vector3 GetSafeSpawnPosition()
+    {
+        Vector2 randomCircle = Random.insideUnitCircle * spawnRadius;
+        Vector3 randomPosition = transform.position + new Vector3(randomCircle.x, 0f, randomCircle.y);
+
+        if (NavMesh.SamplePosition(randomPosition, out NavMeshHit hit, spawnRadius, NavMesh.AllAreas))
         {
             return hit.position;
         }
 
-        // 만약 안전한 곳을 찾지 못했다면(거의 일어나지 않음) 포탈 중앙을 반환합니다.
         return transform.position;
     }
 
-    // 씬 뷰(Scene View)에서 스폰 반경을 시각적으로 보여주는 기능
-    void OnDrawGizmos()
+    private void OnDrawGizmos()
     {
         Gizmos.color = Color.green;
         Gizmos.DrawWireSphere(transform.position, spawnRadius);

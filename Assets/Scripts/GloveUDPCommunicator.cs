@@ -1,134 +1,537 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using UnityEngine;
+using UnityEngine.Events;
 
 /// <summary>
-/// 오른손 공압장갑 UDP 통신 컴포넌트.
-/// 수신 패킷: float 5개 (Thumb, Index, Middle, Ring, Pinky) 각 0.0~1.0, little-endian binary
-/// 송신 패킷: 동일 포맷으로 목표 각도 전송
+/// KOCCA game glove demo UDP bridge.
+/// Receives UTF-8 JSON from the glove on 9001 and sends mode commands to the glove on 9002.
 /// </summary>
 public class GloveUDPCommunicator : MonoBehaviour
 {
+    private const string IncomingSchema = "kocca-game-glove-demo-v1";
+    private const string CommandSchema = "kocca-game-command-v1";
+
     [Header("Network")]
-    [Tooltip("장갑 장치의 IP")]
-    public string gloveIP = "192.168.0.100";
+    [Tooltip("Unity receive bind address. Use 0.0.0.0 unless you need to pin it to the PC IP.")]
+    public string localListenAddress = "0.0.0.0";
 
-    [Tooltip("Unity가 수신할 포트 (장갑 → Unity)")]
-    public int receivePort = 5005;
+    [Tooltip("Unity receive port for glove -> Unity packets.")]
+    public int receivePort = 9001;
 
-    [Tooltip("장갑으로 송신할 포트 (Unity → 장갑)")]
-    public int sendPort = 5006;
+    [Tooltip("Glove/cRIO IP address.")]
+    public string gloveIP = "192.168.0.10";
 
-    [Header("Hand Animation")]
+    [Tooltip("Glove/cRIO command port for Unity -> glove mode packets.")]
+    public int commandPort = 9002;
+
+    [Tooltip("Optional Unity PC source IP for mode commands. Leave empty to let Windows choose the route.")]
+    public string localCommandAddress = "";
+
+    [Tooltip("Optional Unity PC source port for mode commands. 0 means an ephemeral UDP port.")]
+    public int localCommandPort = 0;
+
+    [Tooltip("How many times to repeat a mode command to reduce UDP packet loss.")]
+    [Range(1, 10)]
+    public int commandRepeatCount = 5;
+
+    [Tooltip("Delay between repeated mode command packets, in seconds.")]
+    public float commandRepeatInterval = 0.03f;
+
+    [Header("Gameplay")]
+    public Pistol pistol;
+    public PlayerStatus playerStatus;
     public Animator handAnimator;
+
+    [Tooltip("Update Trigger/Grip animation from the current glove mode.")]
+    public bool updateHandAnimatorFromMode = true;
+
+    [Tooltip("Send the initial mode command once this component starts.")]
+    public bool sendInitialModeOnStart = false;
+
+    public string initialMode = "sword";
+
+    [Tooltip("Minimum incoming sword damage_multiplier.")]
+    public float minDamageMultiplier = 1f;
+
+    [Tooltip("Maximum incoming sword damage_multiplier.")]
+    public float maxDamageMultiplier = 3f;
+
+    [Header("Events")]
+    public UnityEvent onGloveShot;
 
     [Header("Debug")]
     public bool showDebugLog = false;
 
-    // 수신 데이터 (스레드 → 메인)
-    private float[] _received = new float[5]; // Thumb, Index, Middle, Ring, Pinky
-    private bool _hasNewData = false;
-    private readonly object _lock = new object();
+    public string CurrentMode { get; private set; } = "";
+    public int LastShotId => _lastShotId;
+    public float CurrentDamageMultiplier => _damageMultiplier;
+    public float CurrentTension => _currentTension;
 
-    // 송신 목표값
-    private float[] _targets = new float[5];
+    private readonly Queue<string> _receivedJson = new Queue<string>();
+    private readonly object _lock = new object();
+    private readonly float[] _fingerPose = new float[5];
 
     private UdpClient _receiver;
     private UdpClient _sender;
     private Thread _receiveThread;
     private IPEndPoint _gloveEndPoint;
+    private Coroutine _sendModeCoroutine;
+
+    private bool _isRunning;
+    private bool _hasShotBaseline;
+    private bool _modeCommandRequested;
+    private int _lastShotId;
+    private float _damageMultiplier = 1f;
+    private float _currentTension;
+
+    [Serializable]
+    public class GloveStatePacket
+    {
+        public string schema;
+        public string mode;
+        public float damage_multiplier;
+        public int shot_id;
+    }
+
+    private void Awake()
+    {
+        if (playerStatus == null)
+        {
+            playerStatus = PlayerStatus.Instance;
+        }
+    }
 
     private void Start()
     {
-        _gloveEndPoint = new IPEndPoint(IPAddress.Parse(gloveIP), sendPort);
+        bool receiverStarted = StartReceiver();
+        EnsureCommandEndpoint();
 
-        _receiver = new UdpClient(receivePort);
-        _sender   = new UdpClient();
+        if (sendInitialModeOnStart && !_modeCommandRequested)
+        {
+            SendModeCommand(initialMode);
+        }
 
-        _receiveThread = new Thread(ReceiveLoop) { IsBackground = true };
-        _receiveThread.Start();
-
-        Debug.Log($"[Glove] UDP 수신:{receivePort} / 송신:{sendPort} ({gloveIP})");
+        if (receiverStarted)
+        {
+            Debug.Log($"[Glove] Listening on {localListenAddress}:{receivePort}, commands -> {gloveIP}:{commandPort}");
+        }
     }
 
     private void Update()
     {
-        // 수신 데이터를 Animator에 반영
-        float[] data;
-        bool hasNew;
-        lock (_lock)
+        while (TryDequeuePacket(out string json))
         {
-            data   = (float[])_received.Clone();
-            hasNew = _hasNewData;
-            _hasNewData = false;
+            ProcessIncomingJson(json);
+        }
+    }
+
+    public void SetSwordMode()
+    {
+        SendModeCommand("sword");
+    }
+
+    public void SetGunMode()
+    {
+        SendModeCommand("gun");
+    }
+
+    public void SendModeCommand(string mode)
+    {
+        mode = NormalizeMode(mode);
+        if (string.IsNullOrEmpty(mode))
+        {
+            Debug.LogWarning("[Glove] Mode command ignored. Use 'sword' or 'gun'.");
+            return;
         }
 
-        if (!hasNew) return;
-
-        float index = data[1];                              // Index  → Trigger
-        float grip  = (data[2] + data[3] + data[4]) / 3f; // Middle+Ring+Pinky 평균 → Grip
-
-        handAnimator.SetFloat("Trigger", index);
-        handAnimator.SetFloat("Grip",    grip);
+        CurrentMode = mode;
+        _modeCommandRequested = true;
+        ApplyHandPoseForMode(mode);
 
         if (showDebugLog)
-            Debug.Log($"[Glove] T:{data[0]:F2} I:{data[1]:F2} M:{data[2]:F2} R:{data[3]:F2} P:{data[4]:F2}");
+        {
+            Debug.Log($"[Glove] Queue mode command '{mode}' -> {gloveIP}:{commandPort}");
+        }
+
+        if (_sendModeCoroutine != null)
+        {
+            StopCoroutine(_sendModeCoroutine);
+        }
+
+        _sendModeCoroutine = StartCoroutine(SendModeCommandRepeated(mode));
     }
 
     /// <summary>
-    /// 장갑에 목표 각도 송신 (외부에서 호출 가능)
-    /// values: float[5] 각 0.0~1.0
+    /// Legacy helper kept so old call sites still compile. New glove firmware accepts mode JSON only.
     /// </summary>
     public void SendTargets(float[] values)
     {
-        if (values == null || values.Length < 5) return;
+        if (values == null || values.Length < 5)
+        {
+            return;
+        }
 
-        byte[] packet = new byte[5 * 4];
-        for (int i = 0; i < 5; i++)
-            Buffer.BlockCopy(BitConverter.GetBytes(values[i]), 0, packet, i * 4, 4);
+        bool looksLikeSword = values[1] >= 0.3f && values[2] >= 0.3f && values[3] >= 0.3f && values[4] >= 0.3f;
+        bool looksLikeGun = values[1] <= 0.1f && values[2] >= 0.7f && values[3] >= 0.7f && values[4] >= 0.7f;
 
-        try { _sender.Send(packet, packet.Length, _gloveEndPoint); }
-        catch (Exception e) { Debug.LogWarning($"[Glove] 송신 실패: {e.Message}"); }
+        if (looksLikeGun)
+        {
+            SendModeCommand("gun");
+        }
+        else if (looksLikeSword)
+        {
+            SendModeCommand("sword");
+        }
+        else
+        {
+            Debug.LogWarning("[Glove] Raw finger targets are not supported by the JSON protocol. Send sword/gun mode instead.");
+        }
     }
 
-    /// <summary>현재 수신된 손가락 각도 반환 (0=Thumb ~ 4=Pinky)</summary>
     public float GetFingerAngle(int fingerIndex)
     {
-        lock (_lock) { return _received[Mathf.Clamp(fingerIndex, 0, 4)]; }
+        int index = Mathf.Clamp(fingerIndex, 0, _fingerPose.Length - 1);
+        return _fingerPose[index];
     }
 
-    // ── 수신 루프 (별도 스레드) ──────────────────────────────
+    private bool StartReceiver()
+    {
+        IPAddress bindAddress = IPAddress.Any;
+        if (!string.IsNullOrEmpty(localListenAddress) && localListenAddress != "0.0.0.0")
+        {
+            if (!IPAddress.TryParse(localListenAddress, out bindAddress))
+            {
+                Debug.LogWarning($"[Glove] Invalid listen address '{localListenAddress}', falling back to 0.0.0.0.");
+                bindAddress = IPAddress.Any;
+            }
+        }
+
+        _receiver = new UdpClient();
+        try
+        {
+            _receiver.Client.Bind(new IPEndPoint(bindAddress, receivePort));
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Glove] Could not listen on {localListenAddress}:{receivePort}. Check for another app using the port. {e.Message}");
+            _receiver.Close();
+            _receiver = null;
+            return false;
+        }
+
+        _isRunning = true;
+        _receiveThread = new Thread(ReceiveLoop) { IsBackground = true };
+        _receiveThread.Start();
+        return true;
+    }
+
+    private bool EnsureCommandEndpoint()
+    {
+        if (!IPAddress.TryParse(gloveIP, out IPAddress gloveAddress))
+        {
+            Debug.LogWarning($"[Glove] Invalid glove IP '{gloveIP}'.");
+            return false;
+        }
+
+        if (_sender == null)
+        {
+            _sender = CreateCommandSender();
+        }
+        _gloveEndPoint = new IPEndPoint(gloveAddress, commandPort);
+        return true;
+    }
+
+    private UdpClient CreateCommandSender()
+    {
+        UdpClient sender = new UdpClient(AddressFamily.InterNetwork);
+
+        if (string.IsNullOrWhiteSpace(localCommandAddress))
+        {
+            return sender;
+        }
+
+        if (!IPAddress.TryParse(localCommandAddress, out IPAddress localAddress))
+        {
+            Debug.LogWarning($"[Glove] Invalid local command address '{localCommandAddress}', using the default route.");
+            return sender;
+        }
+
+        try
+        {
+            sender.Client.Bind(new IPEndPoint(localAddress, Mathf.Max(0, localCommandPort)));
+            if (showDebugLog)
+            {
+                Debug.Log($"[Glove] Command sender bound to {sender.Client.LocalEndPoint}");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Glove] Could not bind command sender to {localCommandAddress}:{localCommandPort}. Using the default route. {e.Message}");
+        }
+
+        return sender;
+    }
+
+    private IEnumerator SendModeCommandRepeated(string mode)
+    {
+        int repeatCount = Mathf.Max(1, commandRepeatCount);
+        float interval = Mathf.Max(0f, commandRepeatInterval);
+
+        for (int i = 0; i < repeatCount; i++)
+        {
+            SendModeCommandOnce(mode);
+            if (i < repeatCount - 1 && interval > 0f)
+            {
+                yield return new WaitForSeconds(interval);
+            }
+        }
+
+        _sendModeCoroutine = null;
+    }
+
+    private void SendModeCommandOnce(string mode)
+    {
+        if (!EnsureCommandEndpoint())
+        {
+            return;
+        }
+
+        string json = "{\"schema\":\"" + CommandSchema + "\",\"mode\":\"" + mode + "\"}";
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+
+        try
+        {
+            _sender.Send(bytes, bytes.Length, _gloveEndPoint);
+            if (showDebugLog)
+            {
+                Debug.Log($"[Glove] Sent mode command {json} from {_sender.Client.LocalEndPoint} to {_gloveEndPoint}");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Glove] Mode command send failed: {e.Message}");
+        }
+    }
+
     private void ReceiveLoop()
     {
         IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
-        while (true)
+
+        while (_isRunning)
         {
             try
             {
                 byte[] data = _receiver.Receive(ref remote);
-                if (data.Length < 5 * 4) continue;
-
-                float[] angles = new float[5];
-                for (int i = 0; i < 5; i++)
-                    angles[i] = BitConverter.ToSingle(data, i * 4);
+                string json = Encoding.UTF8.GetString(data);
 
                 lock (_lock)
                 {
-                    Array.Copy(angles, _received, 5);
-                    _hasNewData = true;
+                    _receivedJson.Enqueue(json);
                 }
             }
-            catch (SocketException) { break; } // 소켓 닫힐 때 정상 종료
-            catch (Exception e)     { Debug.LogWarning($"[Glove] 수신 오류: {e.Message}"); }
+            catch (SocketException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Glove] Receive error: {e.Message}");
+            }
         }
+    }
+
+    private bool TryDequeuePacket(out string json)
+    {
+        lock (_lock)
+        {
+            if (_receivedJson.Count == 0)
+            {
+                json = null;
+                return false;
+            }
+
+            json = _receivedJson.Dequeue();
+            return true;
+        }
+    }
+
+    private void ProcessIncomingJson(string json)
+    {
+        GloveStatePacket packet;
+
+        try
+        {
+            packet = JsonUtility.FromJson<GloveStatePacket>(json);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Glove] Invalid JSON packet: {e.Message}");
+            return;
+        }
+
+        if (packet == null || string.IsNullOrEmpty(packet.mode))
+        {
+            Debug.LogWarning($"[Glove] Packet missing mode: {json}");
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(packet.schema) && packet.schema != IncomingSchema)
+        {
+            Debug.LogWarning($"[Glove] Schema mismatch: {packet.schema}");
+            return;
+        }
+
+        string mode = NormalizeMode(packet.mode);
+        if (string.IsNullOrEmpty(mode))
+        {
+            Debug.LogWarning($"[Glove] Unknown mode: {packet.mode}");
+            return;
+        }
+
+        CurrentMode = mode;
+        ApplyHandPoseForMode(mode);
+
+        if (mode == "sword")
+        {
+            ApplySwordState(packet.damage_multiplier);
+        }
+        else
+        {
+            ApplyGunState(packet.shot_id);
+        }
+
+        if (showDebugLog)
+        {
+            Debug.Log($"[Glove] Received: {json}");
+        }
+    }
+
+    private void ApplySwordState(float damageMultiplier)
+    {
+        if (maxDamageMultiplier <= minDamageMultiplier)
+        {
+            maxDamageMultiplier = minDamageMultiplier + 0.01f;
+        }
+
+        float clampedMultiplier = Mathf.Clamp(damageMultiplier <= 0f ? minDamageMultiplier : damageMultiplier, minDamageMultiplier, maxDamageMultiplier);
+        float tension = Mathf.InverseLerp(minDamageMultiplier, maxDamageMultiplier, clampedMultiplier);
+
+        _damageMultiplier = clampedMultiplier;
+        _currentTension = tension;
+
+        if (playerStatus == null)
+        {
+            playerStatus = PlayerStatus.Instance;
+        }
+
+        if (playerStatus != null)
+        {
+            playerStatus.currentTension = tension;
+        }
+    }
+
+    private void ApplyGunState(int shotId)
+    {
+        if (!_hasShotBaseline)
+        {
+            // The glove server can already be running, so the first shot_id only establishes the baseline.
+            _lastShotId = shotId;
+            _hasShotBaseline = true;
+
+            if (showDebugLog)
+            {
+                Debug.Log($"[Glove] Shot baseline set: {shotId}");
+            }
+
+            return;
+        }
+
+        if (shotId <= _lastShotId)
+        {
+            return;
+        }
+
+        // Fire once for a newer shot_id, even if ids jumped because Unity missed packets.
+        _lastShotId = shotId;
+
+        if (pistol != null)
+        {
+            pistol.FireFromGlove();
+        }
+        else
+        {
+            Debug.LogWarning("[Glove] Shot received, but no Pistol is assigned.");
+        }
+
+        onGloveShot?.Invoke();
+    }
+
+    private void ApplyHandPoseForMode(string mode)
+    {
+        if (mode == "sword")
+        {
+            SetFingerPose(0f, 0.6f, 0.6f, 0.6f, 0.6f);
+        }
+        else if (mode == "gun")
+        {
+            SetFingerPose(0f, 0f, 0.95f, 0.95f, 0.95f);
+        }
+    }
+
+    private void SetFingerPose(float thumb, float index, float middle, float ring, float pinky)
+    {
+        _fingerPose[0] = thumb;
+        _fingerPose[1] = index;
+        _fingerPose[2] = middle;
+        _fingerPose[3] = ring;
+        _fingerPose[4] = pinky;
+
+        if (!updateHandAnimatorFromMode || handAnimator == null)
+        {
+            return;
+        }
+
+        handAnimator.SetFloat("Trigger", _fingerPose[1]);
+        handAnimator.SetFloat("Grip", (_fingerPose[2] + _fingerPose[3] + _fingerPose[4]) / 3f);
+    }
+
+    private string NormalizeMode(string mode)
+    {
+        if (string.IsNullOrEmpty(mode))
+        {
+            return null;
+        }
+
+        mode = mode.Trim().ToLowerInvariant();
+        return mode == "sword" || mode == "gun" ? mode : null;
     }
 
     private void OnDestroy()
     {
-        _receiveThread?.Abort();
+        _isRunning = false;
+
+        if (_sendModeCoroutine != null)
+        {
+            StopCoroutine(_sendModeCoroutine);
+            _sendModeCoroutine = null;
+        }
+
         _receiver?.Close();
         _sender?.Close();
+
+        if (_receiveThread != null && _receiveThread.IsAlive)
+        {
+            _receiveThread.Join(100);
+        }
     }
 }
